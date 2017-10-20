@@ -3,22 +3,25 @@ using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using System.Linq;
-using System.Text;
 
 namespace DiskSpaceChecker
 {
     public class Program
     {
         private static string logFile = @"DiskSpaceSummary";
-        private static bool headerAdded = false;
+        private static Dictionary<string, long> pathSizeSummary;
 
         static void Main(string[] args)
         {
+            pathSizeSummary = new Dictionary<string, long>();
             logFile = $"{logFile}-{DateTime.Now.ToString("yyyyMMddHHMMss")}.csv";
             var path = args[0];
             var targetDirectory = new DirectoryInfo(path);
+
+            WriteHeader();
             ScanDirectory(targetDirectory);
-            
+            SortAndWriteToFile(pathSizeSummary);
+
             Console.WriteLine("Finished. Press any key to exit");
             Console.ReadLine();
         }
@@ -27,21 +30,15 @@ namespace DiskSpaceChecker
         {
             try
             {
+                Console.WriteLine($"Scanning {directory.FullName}");
                 var files = directory.EnumerateFiles();
                 var totalFiles = files.Count();
                 var totalSize = files.Sum(f => f.Length);
                 var earliestFile = files.Any() ? files.Min(f => f.LastWriteTime).ToString("dd-MMM-yyyy") : string.Empty;
                 var latestFile = files.Any() ? files.Max(f => f.LastWriteTime).ToString("dd-MMM-yyyy") : string.Empty;
-
-                if (!headerAdded)
-                {
-                    var header = "Path,Files,Size,First,Last";
-                    Log(header);
-                    headerAdded = true;
-                }
-
+                
                 var row = $"{directory.FullName},{totalFiles},{ConvertToFormattedMegaBytes(totalSize)},{earliestFile},{latestFile}";
-                Log(row);
+                pathSizeSummary.Add(row, totalSize);
                 foreach (var dir in directory.EnumerateDirectories())
                 {
                     ScanDirectory(dir);
@@ -49,7 +46,7 @@ namespace DiskSpaceChecker
             }
             catch (UnauthorizedAccessException ex)
             {
-                var row = string.Format("{0},{1},{2},{3},{4}", directory.FullName, "na", "na", "na", "na");
+                var row = string.Format("{0},{1},{2},{3},{4}", directory.FullName, "Unauthorized Access", "na", "na", "na");
                 Log(row);
             }
         }
@@ -61,10 +58,23 @@ namespace DiskSpaceChecker
             return megaBytes.ToString("0.00");
         }
 
+        static void SortAndWriteToFile(Dictionary<string, long> data)
+        {
+            foreach (var item in data.OrderByDescending(x => x.Value))
+            {
+                Log(item.Key);
+            }
+        }
+
+        static void WriteHeader()
+        {
+            var header = "Path,Files,Size,First,Last";
+            Log("Path,Files,Size,First,Last");
+        }
+
         static void Log(string text)
         {
             Console.WriteLine(text);
-            StreamWriter outputFile;
             if (!File.Exists(logFile))
             {
                 using (StreamWriter sw = File.CreateText(logFile))
